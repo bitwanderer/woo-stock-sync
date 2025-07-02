@@ -1,0 +1,126 @@
+/* assets/css/wc-gss-admin.css */
+/* Basic styling for the admin page to make it look decent without full Tailwind */
+
+#wc-gss-react-app {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen-Sans, Ubuntu, Cantarell, "Helvetica Neue", sans-serif;
+    background-color: #fff;
+    padding: 20px;
+    border-radius: 8px;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    max-width: 800px;
+    margin-top: 20px;
+    margin-left: auto;
+    margin-right: auto; /* Center the container */
+    box-sizing: border-box; /* Include padding and border in the element's total width and height */
+}
+
+/* Form Group */
+.wc-gss-form-group {
+    margin-bottom: 20px;
+}
+
+/* Labels */
+.wc-gss-label {
+    display: block;
+    margin-bottom: 8px;
+    font-weight: 600;
+    color: #333;
+}
+
+/* Input Field */
+.wc-gss-input {
+    width: 100%;
+    padding: 10px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-size: 16px;
+    box-sizing: border-box;
+}
+
+.wc-gss-input:focus {
+    border-color: #007cba;
+    box-shadow: 0 0 0 1px #007cba;
+    outline: none;
+}
+
+/* Buttons */
+.wc-gss-button {
+    background-color: #007cba;
+    color: #fff;
+    padding: 12px 20px;
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+    font-size: 16px;
+    font-weight: 500;
+    transition: background-color 0.2s ease, box-shadow 0.2s ease;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+.wc-gss-button:hover {
+    background-color: #006dae;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+}
+
+.wc-gss-button:active {
+    background-color: #005a9c;
+    box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+.wc-gss-button:disabled {
+    background-color: #cccccc;
+    cursor: not-allowed;
+    box-shadow: none;
+}
+
+/* Status Messages */
+.wc-gss-message {
+    padding: 15px;
+    margin-top: 20px;
+    border-radius: 4px;
+    font-size: 15px;
+    line-height: 1.5;
+}
+
+.wc-gss-message.success {
+    background-color: #e6ffe6;
+    border: 1px solid #00c853;
+    color: #007d33;
+}
+
+.wc-gss-message.error {
+    background-color: #ffe6e6;
+    border: 1px solid #d32f2f;
+    color: #b71c1c;
+}
+
+.wc-gss-message.info {
+    background-color: #e6f7ff;
+    border: 1px solid #2196f3;
+    color: #0d47a1;
+}
+
+/* Last Sync Time */
+.wc-gss-last-sync {
+    margin-top: 20px;
+    font-size: 14px;
+    color: #555;
+    text-align: right; /* Align to the right for better visual separation */
+}
+
+.wc-gss-last-sync strong {
+    color: #333;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+    #wc-gss-react-app {
+        padding: 15px;
+        margin: 15px;
+    }
+
+    .wc-gss-button {
+        width: 100%;
+        padding: 10px 15px;
+    }
+}
