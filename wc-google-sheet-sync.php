@@ -3,7 +3,7 @@
  * Plugin Name: WC Google Sheet Sync
  * Plugin URI:  https://github.com/bitwanderer/woo-stock-sync/
  * Description: One-way synchronization of stock and pricing data from a Google Sheet to WooCommerce products based on SKU.
- * Version:     1.0.0
+ * Version:     1.0.3
  * Author:      WebLynx
  * Author URI:  https://weblynx.pro
  * License:     GPL-3.0+
@@ -24,7 +24,7 @@ if ( ! defined( 'ABSPATH' ) ) {
  */
 define( 'WC_GSS_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'WC_GSS_PLUGIN_URL', plugin_dir_url( __FILE__ ) );
-define( 'WC_GSS_VERSION', '1.0.0' );
+define( 'WC_GSS_VERSION', '1.0.3' );
 
 /**
  * Declare HPOS compatibility.
