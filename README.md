@@ -95,7 +95,7 @@ Public CSV links still work on sites that do not configure a private sheet.
    | SKU | A unique SKU for each row. Format this column as plain text if your SKUs have leading zeros. |
    | Stock | A whole number zero or greater. |
    | Regular Price | A number zero or greater. Use a decimal point for fractional amounts. |
-   | Sale Price | A positive price below the regular price. Leave blank or enter zero to clear the sale price. |
+   | Sale Price | A positive price below the regular price sets a sale. Blank, zero, or an equal price clears the sale. A higher price is rejected. |
 
 2. In Google Sheets, choose **File → Share → Publish to web**, select the tab
    to publish, and choose **Comma-separated values (.csv)**. Copy the HTTPS

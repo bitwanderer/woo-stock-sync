@@ -193,6 +193,12 @@ public function enqueue_admin_scripts( $hook ) {
         return str_replace( ',', '', $value );
     }
 
+    private function price_sort_key( $price ) {
+        // Parsed prices have at most 12 whole digits and six fractional digits.
+        list( $whole, $fraction ) = array_pad( explode( '.', $price, 2 ), 2, '' );
+        return str_pad( $whole, 12, '0', STR_PAD_LEFT ) . str_pad( $fraction, 6, '0' );
+    }
+
     private function is_csv_record( $record ) {
         $field = '(?:"(?:[^"]++|"")*+"|[^",\r\n]*+)';
         return 1 === preg_match( '~\A' . $field . '(?:,' . $field . ')*+(?:\r\n|\r|\n)?\z~', $record );
@@ -317,8 +323,9 @@ public function enqueue_admin_scripts( $hook ) {
                 if ( null === $regular ) {
                     return new WP_Error( 'wc_gss_row', sprintf( __( 'Row %1$d (SKU %2$s): Regular Price must be a number zero or greater.', 'wc-google-sheet-sync' ), $row_number, $sku ) );
                 }
-                if ( null === $sale || ( '' !== $sale && (float) $sale > 0 && (float) $sale >= (float) $regular ) ) {
-                    return new WP_Error( 'wc_gss_row', sprintf( __( 'Row %1$d (SKU %2$s): Sale Price must be blank, zero, or a positive number below Regular Price.', 'wc-google-sheet-sync' ), $row_number, $sku ) );
+                $sale_order = '' === $sale || null === $sale ? 0 : strcmp( $this->price_sort_key( $sale ), $this->price_sort_key( $regular ) );
+                if ( null === $sale || $sale_order > 0 ) {
+                    return new WP_Error( 'wc_gss_row', sprintf( __( 'Row %1$d (SKU %2$s): Sale Price must be blank or between zero and Regular Price, inclusive.', 'wc-google-sheet-sync' ), $row_number, $sku ) );
                 }
                 if ( isset( $updates[ $product_id ] ) ) {
                     return new WP_Error( 'wc_gss_duplicate', __( 'Multiple CSV rows resolve to the same WooCommerce product.', 'wc-google-sheet-sync' ) );
@@ -326,7 +333,9 @@ public function enqueue_admin_scripts( $hook ) {
                 if ( ! current_user_can( 'edit_post', $product_id ) ) {
                     return new WP_Error( 'wc_gss_product_permission', __( 'You do not have permission to edit every product in this import.', 'wc-google-sheet-sync' ) );
                 }
-                $updates[ $product_id ] = array( $sku, (int) $stock, $regular, '' !== $sale && (float) $sale > 0 ? $sale : '' );
+                // Preserve the original import behavior: only an actual discount is a sale.
+                $sale = $sale_order < 0 && (float) $sale > 0 ? $sale : '';
+                $updates[ $product_id ] = array( $sku, (int) $stock, $regular, $sale );
             }
 
             foreach ( $updates as $product_id => list( $sku, $stock, $regular, $sale ) ) {
