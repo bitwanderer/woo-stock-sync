@@ -26,11 +26,10 @@ class WC_Google_Sheet_Sync_Admin {
 
     public function render_admin_page() {
         ?>
-        <div id="wc-gss-admin-root">
+        <div id="wc-gss-admin-root" class="wrap">
             <h1><?php esc_html_e( 'WooCommerce Google Sheet Sync', 'wc-google-sheet-sync' ); ?></h1>
-            <p><?php esc_html_e( 'Synchronize product data from Google Sheets.', 'wc-google-sheet-sync' ); ?></p>
-            <?php WC_GSS_Google_OAuth::render(); ?>
             <div id="wc-gss-react-app"></div>
+            <?php WC_GSS_Google_OAuth::render(); ?>
         </div>
         <?php
     }
@@ -254,11 +253,11 @@ public function enqueue_admin_scripts( $hook ) {
                     return new WP_Error( 'wc_gss_row', sprintf( __( 'CSV row %d is malformed.', 'wc-google-sheet-sync' ), $row_number ) );
                 }
                 $offset = $end;
-                if ( array( null ) === $row ) {
+                $sku = trim( $row[ $columns['sku'] ] ?? '' );
+                if ( '' === $sku || preg_match( '/\A[\s\p{Z}]+\z/u', $sku ) ) {
                     continue;
                 }
-                $sku = trim( $row[ $columns['sku'] ] ?? '' );
-                if ( '' === $sku || strlen( $sku ) > 255 || preg_match( '/[\x00-\x1f\x7f]/', $sku ) ) {
+                if ( strlen( $sku ) > 255 || preg_match( '/[\x00-\x1f\x7f]/', $sku ) ) {
                     return new WP_Error( 'wc_gss_row', sprintf( __( 'CSV row %d has an invalid SKU.', 'wc-google-sheet-sync' ), $row_number ) );
                 }
                 $rows[] = array(
@@ -271,7 +270,7 @@ public function enqueue_admin_scripts( $hook ) {
                 );
             }
 
-            return $rows ?: new WP_Error( 'wc_gss_empty', __( 'The CSV has no product rows.', 'wc-google-sheet-sync' ) );
+            return $rows;
         } finally {
             fclose( $handle );
         }

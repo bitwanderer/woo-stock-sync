@@ -57,7 +57,7 @@ function App() {
     };
 
     const children = [
-        wcGssData.private_sheet ? createElement('p', null, 'Using the private Google Sheet configured on this server.') : createElement('div', { className: 'wc-gss-form-group' },
+        wcGssData.private_sheet ? createElement('p', { className: 'wc-gss-source' }, 'Source: Private Google Sheet') : createElement('div', { className: 'wc-gss-form-group' },
             createElement('label', {
                 htmlFor: 'wc-gss-sheet-url',
                 className: 'wc-gss-label'
@@ -74,28 +74,29 @@ function App() {
             }),
 
             createElement('p', {
-                className: 'wc-gss-info',
-                style: { fontSize: '0.85em', color: '#666', marginTop: '5px' }
+                className: 'description'
             }, 'In Google Sheets, use File > Share > Publish to web and choose "Comma-separated values (.csv)".')
         ),
 
-        createElement('button', {
-            onClick: handleSync,
-            className: 'wc-gss-button',
-            disabled: isLoading || (!wcGssData.private_sheet && !sheetUrl)
-        }, isLoading ? 'Syncing...' : 'Run Sync Now'),
-
-        lastSyncTime ? createElement('p', { className: 'wc-gss-last-sync' },
-            'Last Sync: ',
-            createElement('strong', null, new Date(lastSyncTime).toLocaleString())
-        ) : null,
+        createElement('div', { className: 'wc-gss-sync-actions' },
+            createElement('button', {
+                type: 'button',
+                onClick: handleSync,
+                className: 'button button-primary',
+                disabled: isLoading || (!wcGssData.private_sheet && !sheetUrl.trim())
+            }, isLoading ? 'Syncing…' : 'Run Sync Now'),
+            lastSyncTime ? createElement('span', { className: 'wc-gss-last-sync' },
+                'Last successful sync: ', new Date(lastSyncTime).toLocaleString()
+            ) : null
+        ),
 
         message ? createElement('div', {
-            className: `wc-gss-message ${messageType}`
+            className: `wc-gss-message wc-gss-message-${messageType}`,
+            role: messageType === 'error' ? 'alert' : 'status'
         }, message) : null
     ];
 
-    return createElement('div', { id: 'wc-gss-admin-root-inner' }, children);
+    return createElement('div', { 'aria-busy': isLoading }, ...children);
 }
 
 // Mount it into the DOM

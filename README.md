@@ -25,7 +25,8 @@ keeps the spreadsheet private and requires an HTTPS WordPress admin URL and PHP
 OpenSSL.
 
 1. Install Woo Stock Sync 1.0.6 or later. As a WordPress administrator, open
-   **WooCommerce → Sheet Sync** and copy the **Google OAuth callback URL**.
+   **WooCommerce → Sheet Sync**, expand **Google connection**, and copy the
+   **Google OAuth callback URL**.
 2. In a Google Cloud project owned by your Workspace organization, enable the
    **Google Sheets API**. Go to **Google Auth Platform → Branding**, complete
    the app details, and set **Audience** to **Internal**.
@@ -44,7 +45,8 @@ OpenSSL.
    Use the ID between `/spreadsheets/d/` and `/edit`. Keep the client secret
    out of Git and chat. Put the four import headers in row 1, in any order. Extra columns are
    ignored. Format stock and prices without currency symbols.
-5. Return to **WooCommerce → Sheet Sync**, click **Connect Google**, and sign
+5. Return to **WooCommerce → Sheet Sync → Google connection**, click **Connect
+   Google**, and sign
    in as a Workspace user who can view the sheet. Keep your WordPress session
    open during consent. Then click **Run Sync Now**.
 
@@ -113,8 +115,8 @@ in to Google.
 
 - Imports are limited to 2 MiB and 10,000 rows. One import can run per store at
   a time.
-- The plugin skips SKUs that do not exist in WooCommerce before checking their
-  stock or prices. Duplicate matches, invalid values, or insufficient edit
+- The plugin skips rows with blank SKUs and SKUs that do not exist in
+  WooCommerce before checking their stock or prices. Duplicate matches, invalid values, or insufficient edit
   permissions for products in WooCommerce stop the import before it writes.
   If no SKUs match, the sync reports zero updates.
 - The saved source URL and last successful sync time update after the import

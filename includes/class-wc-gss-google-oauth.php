@@ -33,11 +33,6 @@ final class WC_GSS_Google_OAuth {
         if ( ! current_user_can( 'manage_options' ) ) {
             return;
         }
-        echo '<p>' . esc_html__( 'Google OAuth callback URL:', 'wc-google-sheet-sync' ) . ' <code>' . esc_html( self::callback_url() ) . '</code></p>';
-        if ( ! self::configured() ) {
-            return;
-        }
-
         $messages = array(
             'connected'    => __( 'Google account connected.', 'wc-google-sheet-sync' ),
             'disconnected' => __( 'Google account disconnected from WordPress.', 'wc-google-sheet-sync' ),
@@ -46,19 +41,34 @@ final class WC_GSS_Google_OAuth {
             'token'        => __( 'Could not save a read-only Google connection. Check the OAuth client settings and try again.', 'wc-google-sheet-sync' ),
         );
         $status = self::query( 'wc_gss_google', 30 );
+        $configured = self::configured();
+        $ready = self::ready();
+        $connected = $ready && null !== self::refresh_token();
+        $open = ( $configured && ! $connected ) || isset( $messages[ $status ] );
+
+        echo '<details class="wc-gss-connection"' . ( $open ? ' open' : '' ) . '>';
+        echo '<summary>' . esc_html__( 'Google connection', 'wc-google-sheet-sync' );
+        if ( $connected ) {
+            echo ' <span class="wc-gss-connected">' . esc_html__( 'Connected', 'wc-google-sheet-sync' ) . '</span>';
+        }
+        echo '</summary><div class="wc-gss-connection-body">';
         if ( isset( $messages[ $status ] ) ) {
             echo '<p role="status">' . esc_html( $messages[ $status ] ) . '</p>';
         }
 
-        if ( ! self::ready() ) {
+        if ( $ready ) {
+            echo '<div class="wc-gss-connection-actions">';
+            self::form( 'connect', $connected ? __( 'Reconnect Google', 'wc-google-sheet-sync' ) : __( 'Connect Google', 'wc-google-sheet-sync' ) );
+            if ( $connected ) {
+                self::form( 'disconnect', __( 'Disconnect Google', 'wc-google-sheet-sync' ) );
+            }
+            echo '</div>';
+        } elseif ( $configured ) {
             echo '<p>' . esc_html__( 'Google OAuth requires the client ID and secret in wp-config.php, an HTTPS admin URL, and PHP OpenSSL.', 'wc-google-sheet-sync' ) . '</p>';
-            return;
         }
-        $connected = null !== self::refresh_token();
-        self::form( 'connect', $connected ? __( 'Reconnect Google', 'wc-google-sheet-sync' ) : __( 'Connect Google', 'wc-google-sheet-sync' ) );
-        if ( $connected ) {
-            self::form( 'disconnect', __( 'Disconnect Google', 'wc-google-sheet-sync' ) );
-        }
+
+        echo '<p class="wc-gss-callback"><strong>' . esc_html__( 'Google OAuth callback URL', 'wc-google-sheet-sync' ) . '</strong><br><code>' .
+            esc_html( self::callback_url() ) . '</code></p></div></details>';
     }
 
     private static function form( $action, $label ) {
