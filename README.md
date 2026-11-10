@@ -1,42 +1,51 @@
-This is a really simple WordPress plugin that syncs a Google Inventory Sheet with WooCommerce stock.
+# Woo Stock Sync
 
-The sync is one-way only, from the Google Sheet to the Woo stock (your Woo stock will be overwritten).
+Woo Stock Sync imports stock quantities, regular prices, and sale prices from
+a Google Sheets CSV into WooCommerce. It matches products by SKU and runs
+manually from the WordPress dashboard. The sheet is the source of truth for
+each matched product, so check the values before running a sync.
 
-The plugin uses SKU to identify the products.
+## Install or update
 
-How to use:
+1. Download the plugin ZIP from the [latest release](https://github.com/bitwanderer/woo-stock-sync/releases/latest).
+2. In WordPress, go to **Plugins → Add New Plugin → Upload Plugin** and select
+   the ZIP. If WordPress offers to replace the existing plugin, confirm the
+   replacement.
+3. Activate the plugin. WooCommerce must be active.
 
-1. Download and install the plugin.
-2. Create a Google Sheet with the following columns:
+## Prepare and sync a sheet
 
-   - SKU
-   - Stock
-   - Regular Price
-   - Sale Price
-     
-3. Publish the sheet as CSV and copy the URL
-4. Go to WooCommerce --> Sheet Sync in your Dashboard
-5. Fill in the sheet URL and click "Run Sync Now"
+1. Create a sheet with the following columns.
 
-That's all!
+   | Column | Accepted values |
+   | --- | --- |
+   | SKU | A unique SKU for each row. Format this column as plain text if your SKUs have leading zeros. |
+   | Stock | A whole number zero or greater. |
+   | Regular Price | A number zero or greater. Use a decimal point for fractional amounts. |
+   | Sale Price | A positive price below the regular price. Leave blank or enter zero to clear the sale price. |
 
-You can add other columns with any information you like, but only the 4 listed columns will be synced.
+2. In Google Sheets, choose **File → Share → Publish to web**, select the tab
+   to publish, and choose **Comma-separated values (.csv)**. Copy the HTTPS
+   link. Supported links use `/pub?output=csv` or `/export?format=csv` on
+   `docs.google.com`, with optional tab parameters.
+3. In WordPress, open **WooCommerce → Sheet Sync** as an Administrator or Shop
+   Manager, paste the link, and click **Run Sync Now**.
+4. Check the result for updated products and unmatched SKUs.
 
-## Import validation
+Publish a dedicated tab containing only data you are comfortable sharing.
+Extra columns are ignored by the importer but are still included in the
+published CSV. A login wall on the WooCommerce site does not restrict the
+Google-hosted file. WordPress must be able to fetch the CSV without signing
+in to Google.
 
-Use an HTTPS Google Sheets CSV link. Supported links end in `/pub?output=csv`
-or `/export?format=csv`, with optional tab parameters. The Google URL must be
-readable by WordPress without signing in. Publish a dedicated tab containing
-only information you intend to share, including any extra columns.
+## What happens during a sync
 
-Version 1.0.4 limits each import to 2 MiB and 10,000 CSV rows. Each row needs a
-unique SKU, a whole nonnegative stock quantity, and a nonnegative regular price.
-Prices can use a decimal point and correctly grouped thousands separators.
-Leave Sale Price blank or set it to zero to clear the sale price. A positive
-sale price must be below the regular price.
-
-The plugin checks the file and product permissions before writing. Unknown SKUs
-are skipped. Only one sync can run per store at a time. The source URL and last
-successful sync time are saved after the import completes. If WooCommerce fails
-while saving products, the sync stops and reports how many saves completed.
-Review those products before retrying.
+- Imports are limited to 2 MiB and 10,000 rows. One import can run per store at
+  a time.
+- The plugin validates the entire CSV and checks product edit permissions
+  before it starts writing. Duplicate SKUs and invalid rows stop the import.
+  Unknown SKUs are skipped.
+- The saved source URL and last successful sync time update after the import
+  completes. If WooCommerce fails while saving, earlier saves can remain.
+  The error reports how many saves completed so you can review the catalog
+  before retrying.
