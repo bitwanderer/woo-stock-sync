@@ -5,12 +5,13 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 final class WC_GSS_Private_Sheet {
+    public const SCOPE = 'https://www.googleapis.com/auth/spreadsheets.readonly';
     private const TOKEN_URL = 'https://oauth2.googleapis.com/token';
     private const MAX_BYTES = 2 * 1024 * 1024;
     private const MAX_ROWS = 10000;
 
     public static function configured() {
-        return defined( 'WC_GSS_GOOGLE_KEY_FILE' ) || defined( 'WC_GSS_GOOGLE_SPREADSHEET_ID' ) || defined( 'WC_GSS_GOOGLE_SHEET_TAB' );
+        return WC_GSS_Google_OAuth::configured() || defined( 'WC_GSS_GOOGLE_KEY_FILE' ) || defined( 'WC_GSS_GOOGLE_SPREADSHEET_ID' ) || defined( 'WC_GSS_GOOGLE_SHEET_TAB' );
     }
 
     public static function fetch_csv() {
@@ -21,7 +22,7 @@ final class WC_GSS_Private_Sheet {
             return new WP_Error( 'wc_gss_private_config', __( 'Set a valid Google spreadsheet ID and tab in wp-config.php.', 'wc-google-sheet-sync' ) );
         }
 
-        $token = self::access_token();
+        $token = WC_GSS_Google_OAuth::configured() ? WC_GSS_Google_OAuth::access_token() : self::access_token();
         if ( is_wp_error( $token ) ) {
             return $token;
         }
@@ -106,7 +107,7 @@ final class WC_GSS_Private_Sheet {
         $now = time();
         $claims = wp_json_encode( array(
             'iss'   => $credentials['client_email'],
-            'scope' => 'https://www.googleapis.com/auth/spreadsheets.readonly',
+            'scope' => self::SCOPE,
             'aud'   => self::TOKEN_URL,
             'iat'   => $now,
             'exp'   => $now + 300,
@@ -118,21 +119,26 @@ final class WC_GSS_Private_Sheet {
         if ( ! openssl_sign( $assertion, $signature, $key, OPENSSL_ALGO_SHA256 ) ) {
             return new WP_Error( 'wc_gss_key', __( 'Could not sign the Google service-account request.', 'wc-google-sheet-sync' ) );
         }
+        $data = self::request_token( array(
+            'grant_type' => 'urn:ietf:params:oauth:grant-type:jwt-bearer',
+            'assertion'  => $assertion . '.' . self::base64url( $signature ),
+        ), __( 'Google refused the service-account token request. Check that the key is active and the server clock is correct.', 'wc-google-sheet-sync' ) );
+        return is_wp_error( $data ) ? $data : self::extract_access_token( $data );
+    }
+
+    public static function request_token( $body, $error_message ) {
         $response = wp_safe_remote_post( self::TOKEN_URL, array(
             'timeout'             => 10,
             'redirection'         => 0,
             'limit_response_size' => 16385,
             'decompress'          => false,
             'headers'             => array( 'Accept-Encoding' => 'identity' ),
-            'body'                => array(
-                'grant_type' => 'urn:ietf:params:oauth:grant-type:jwt-bearer',
-                'assertion'  => $assertion . '.' . self::base64url( $signature ),
-            ),
+            'body'                => $body,
         ) );
-        $data = self::google_json( $response, 16384, __( 'Google refused the service-account token request. Check that the key is active and the server clock is correct.', 'wc-google-sheet-sync' ) );
-        if ( is_wp_error( $data ) ) {
-            return $data;
-        }
+        return self::google_json( $response, 16384, $error_message );
+    }
+
+    public static function extract_access_token( $data ) {
         $token = $data['access_token'] ?? '';
         if ( ! is_string( $token ) || ! preg_match( '!\A[A-Za-z0-9._~+/-]+=*\z!', $token ) ) {
             return new WP_Error( 'wc_gss_token', __( 'Google did not return a usable access token.', 'wc-google-sheet-sync' ) );
@@ -153,7 +159,7 @@ final class WC_GSS_Private_Sheet {
         return is_array( $data ) ? $data : new WP_Error( 'wc_gss_google_response', __( 'Google returned an invalid or oversized response.', 'wc-google-sheet-sync' ) );
     }
 
-    private static function base64url( $value ) {
+    public static function base64url( $value ) {
         return rtrim( strtr( base64_encode( $value ), '+/', '-_' ), '=' );
     }
 }

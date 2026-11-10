@@ -18,7 +18,44 @@ installed a second copy under `woo-stock-sync-main`, deactivate that copy
 before upgrading and keep only `wc-google-sheet-sync` active. The saved
 sheet URL is stored in WordPress and is shared by both copies.
 
-## Use a private Google Workspace sheet
+## Connect a private Google Workspace sheet with OAuth
+
+Use this setup if your organization blocks service-account key creation. It
+keeps the spreadsheet private and requires an HTTPS WordPress admin URL and PHP
+OpenSSL.
+
+1. Install Woo Stock Sync 1.0.6 or later. As a WordPress administrator, open
+   **WooCommerce → Sheet Sync** and copy the **Google OAuth callback URL**.
+2. In a Google Cloud project owned by your Workspace organization, enable the
+   **Google Sheets API**. Go to **Google Auth Platform → Branding**, complete
+   the app details, and set **Audience** to **Internal**.
+3. Under **Google Auth Platform → Clients**, create a **Web application**
+   client. Paste the callback URL exactly into **Authorized redirect URIs**,
+   including the query string. Leave Authorized JavaScript origins empty.
+4. Add these settings to `wp-config.php` before the line that loads WordPress:
+
+   ```php
+   define( 'WC_GSS_GOOGLE_CLIENT_ID', 'YOUR_WEB_CLIENT_ID' );
+   define( 'WC_GSS_GOOGLE_CLIENT_SECRET', 'YOUR_WEB_CLIENT_SECRET' );
+   define( 'WC_GSS_GOOGLE_SPREADSHEET_ID', 'ID_FROM_THE_NORMAL_EDIT_LINK' );
+   define( 'WC_GSS_GOOGLE_SHEET_TAB', 'products' );
+   ```
+
+   Use the ID between `/spreadsheets/d/` and `/edit`. Keep the client secret
+   out of Git and chat. Put the four import columns in A–D, with headers in
+   row 1, and format stock and prices without currency symbols.
+5. Return to **WooCommerce → Sheet Sync**, click **Connect Google**, and sign
+   in as a Workspace user who can view the sheet. Keep your WordPress session
+   open during consent. Then click **Run Sync Now**.
+
+Google grants read-only access to all spreadsheets the authorizing account can
+view. For least access, use a dedicated Workspace account with Viewer access
+to only the inventory file. If Workspace blocks authorization, ask your admin
+to approve the OAuth client ID for Google Sheets. Use **Disconnect Google** to
+remove the stored connection from WordPress. Revoke the app in your Google
+account if you also want to remove Google's grant.
+
+## Use a service account for a private sheet
 
 1. Enable the Google Sheets API in your Google Cloud project and share a
    dedicated inventory spreadsheet with the service account as **Viewer**.
@@ -44,7 +81,7 @@ sheet URL is stored in WordPress and is shared by both copies.
    uses read-only Sheets API access and keeps the credential on the server.
 
 If your organization disallows service-account keys or prevents sharing with
-the service account, this setup requires a different authentication method.
+the service account, use the internal OAuth setup above.
 Public CSV links still work on sites that do not configure a private sheet.
 
 ## Prepare and sync a public sheet

@@ -7,6 +7,7 @@ class WC_Google_Sheet_Sync_Admin {
     public function __construct() {}
 
     public function init() {
+        WC_GSS_Google_OAuth::register();
         add_action( 'admin_menu', array( $this, 'add_admin_menu' ) );
         add_action( 'admin_enqueue_scripts', array( $this, 'enqueue_admin_scripts' ) );
         add_action( 'wp_ajax_wc_gss_sync_data', array( $this, 'handle_sync_ajax' ) );
@@ -28,6 +29,7 @@ class WC_Google_Sheet_Sync_Admin {
         <div id="wc-gss-admin-root">
             <h1><?php esc_html_e( 'WooCommerce Google Sheet Sync', 'wc-google-sheet-sync' ); ?></h1>
             <p><?php esc_html_e( 'Synchronize product data from Google Sheets.', 'wc-google-sheet-sync' ); ?></p>
+            <?php WC_GSS_Google_OAuth::render(); ?>
             <div id="wc-gss-react-app"></div>
         </div>
         <?php
