@@ -103,7 +103,7 @@ Public CSV links still work on sites that do not configure a private sheet.
    `docs.google.com`, with optional tab parameters.
 3. In WordPress, open **WooCommerce → Sheet Sync** as an Administrator or Shop
    Manager, paste the link, and click **Run Sync Now**.
-4. Check the result for updated products and unmatched SKUs.
+4. Check the result for updated products and skipped SKU rows.
 
 Publish a dedicated tab containing only data you are comfortable sharing.
 Extra columns are ignored by the importer but are still included in the
@@ -115,8 +115,8 @@ in to Google.
 
 - Imports are limited to 2 MiB and 10,000 rows. One import can run per store at
   a time.
-- The plugin skips rows with blank SKUs and SKUs that do not exist in
-  WooCommerce before checking their stock or prices. Duplicate matches, invalid values, or insufficient edit
+- The plugin skips blank SKUs, missing SKUs, private products, and variations
+  of private products before checking stock or prices. Duplicate matches, invalid values, or insufficient edit
   permissions for products in WooCommerce stop the import before it writes.
   If no SKUs match, the sync reports zero updates.
 - The saved source URL and last successful sync time update after the import

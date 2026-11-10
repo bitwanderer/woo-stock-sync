@@ -39,7 +39,7 @@ function App() {
             if (data.success) {
                 setMessage(
                     `Sync successful! Updated ${data.data.updated} products. ` +
-                    `${data.data.not_found} SKUs did not match a product.`
+                    `${data.data.not_found} SKU rows skipped.`
                 );
                 setMessageType('success');
                 setLastSyncTime(data.data.last_sync_time);

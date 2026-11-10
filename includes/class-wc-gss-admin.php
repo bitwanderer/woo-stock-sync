@@ -276,6 +276,18 @@ public function enqueue_admin_scripts( $hook ) {
         }
     }
 
+    private function is_syncable_product( $product, $sku ) {
+        // The lookup index or a WooCommerce filter can return an out-of-date ID.
+        if ( ! $product || 0 !== strcasecmp( $sku, (string) $product->get_sku( 'edit' ) ) ||
+            in_array( $product->get_status( 'edit' ), array( 'private', 'trash' ), true ) ) {
+            return false;
+        }
+
+        // A published variation can belong to a private product.
+        $parent_id = $product->get_parent_id( 'edit' );
+        return ! $parent_id || ! in_array( get_post_status( $parent_id ), array( false, 'private', 'trash' ), true );
+    }
+
     private function sync_sheet_data( $body ) {
         $rows = $this->parse_csv( $body );
         if ( is_wp_error( $rows ) ) {
@@ -288,7 +300,7 @@ public function enqueue_admin_scripts( $hook ) {
         try {
             foreach ( $rows as list( $row_number, $sku, $complete, $stock, $regular, $sale_input ) ) {
                 $product_id = wc_get_product_id_by_sku( $sku );
-                if ( ! $product_id ) {
+                if ( ! $product_id || ! $this->is_syncable_product( wc_get_product( $product_id ), $sku ) ) {
                     $not_found++;
                     continue;
                 }
@@ -299,9 +311,14 @@ public function enqueue_admin_scripts( $hook ) {
                 $regular = $this->parse_price( $regular );
                 $sale_input = trim( $sale_input );
                 $sale = '' === $sale_input ? '' : $this->parse_price( $sale_input );
-                if ( ! preg_match( '/\A[0-9]{1,10}\z/', $stock ) || (float) $stock > 2147483647 ||
-                    null === $regular || null === $sale || ( '' !== $sale && (float) $sale > 0 && (float) $sale >= (float) $regular ) ) {
-                    return new WP_Error( 'wc_gss_row', sprintf( __( 'CSV row %d has an invalid stock quantity or price.', 'wc-google-sheet-sync' ), $row_number ) );
+                if ( ! preg_match( '/\A[0-9]{1,10}\z/', $stock ) || (float) $stock > 2147483647 ) {
+                    return new WP_Error( 'wc_gss_row', sprintf( __( 'Row %1$d (SKU %2$s): Stock must be a whole number from 0 to 2147483647.', 'wc-google-sheet-sync' ), $row_number, $sku ) );
+                }
+                if ( null === $regular ) {
+                    return new WP_Error( 'wc_gss_row', sprintf( __( 'Row %1$d (SKU %2$s): Regular Price must be a number zero or greater.', 'wc-google-sheet-sync' ), $row_number, $sku ) );
+                }
+                if ( null === $sale || ( '' !== $sale && (float) $sale > 0 && (float) $sale >= (float) $regular ) ) {
+                    return new WP_Error( 'wc_gss_row', sprintf( __( 'Row %1$d (SKU %2$s): Sale Price must be blank, zero, or a positive number below Regular Price.', 'wc-google-sheet-sync' ), $row_number, $sku ) );
                 }
                 if ( isset( $updates[ $product_id ] ) ) {
                     return new WP_Error( 'wc_gss_duplicate', __( 'Multiple CSV rows resolve to the same WooCommerce product.', 'wc-google-sheet-sync' ) );
@@ -309,13 +326,13 @@ public function enqueue_admin_scripts( $hook ) {
                 if ( ! current_user_can( 'edit_post', $product_id ) ) {
                     return new WP_Error( 'wc_gss_product_permission', __( 'You do not have permission to edit every product in this import.', 'wc-google-sheet-sync' ) );
                 }
-                $updates[ $product_id ] = array( (int) $stock, $regular, '' !== $sale && (float) $sale > 0 ? $sale : '' );
+                $updates[ $product_id ] = array( $sku, (int) $stock, $regular, '' !== $sale && (float) $sale > 0 ? $sale : '' );
             }
 
-            foreach ( $updates as $product_id => list( $stock, $regular, $sale ) ) {
+            foreach ( $updates as $product_id => list( $sku, $stock, $regular, $sale ) ) {
                 $product = wc_get_product( $product_id );
-                if ( ! $product ) {
-                    throw new RuntimeException( 'Could not load product.' );
+                if ( ! $this->is_syncable_product( $product, $sku ) ) {
+                    throw new RuntimeException( 'Product is no longer eligible for sync.' );
                 }
                 $product->set_manage_stock( true );
                 $product->set_stock_quantity( $stock );
