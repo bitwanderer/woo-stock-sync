@@ -199,6 +199,22 @@ public function enqueue_admin_scripts( $hook ) {
         return 1 === preg_match( '~\A' . $field . '(?:,' . $field . ')*+(?:\r\n|\r|\n)?\z~', $record );
     }
 
+    public static function import_columns( array $header ) {
+        $fields = array( 'sku', 'stock', 'regular price', 'sale price' );
+        $columns = array();
+        $header = array_map( static function ( $name ) {
+            return is_scalar( $name ) ? strtolower( trim( (string) $name ) ) : '';
+        }, $header );
+        foreach ( $fields as $field ) {
+            $matches = array_keys( $header, $field, true );
+            if ( 1 !== count( $matches ) ) {
+                return new WP_Error( 'wc_gss_header', sprintf( __( 'The CSV must contain exactly one "%s" column.', 'wc-google-sheet-sync' ), $field ) );
+            }
+            $columns[ $field ] = $matches[0];
+        }
+        return $columns;
+    }
+
     private function parse_csv( $body ) {
         if ( ! preg_match( '//u', $body ) || false !== strpos( $body, "\0" ) ) {
             return new WP_Error( 'wc_gss_encoding', __( 'The CSV must be UTF-8 text.', 'wc-google-sheet-sync' ) );
@@ -221,17 +237,9 @@ public function enqueue_admin_scripts( $hook ) {
             if ( ! $header || ! $this->is_csv_record( substr( $body, 0, $offset ) ) ) {
                 return new WP_Error( 'wc_gss_header', __( 'The CSV header is missing or invalid.', 'wc-google-sheet-sync' ) );
             }
-            $fields = array( 'sku', 'stock', 'regular price', 'sale price' );
-            $columns = array();
-            $header = array_map( static function ( $name ) {
-                return strtolower( trim( (string) $name ) );
-            }, $header );
-            foreach ( $fields as $field ) {
-                $matches = array_keys( $header, $field, true );
-                if ( 1 !== count( $matches ) ) {
-                    return new WP_Error( 'wc_gss_header', sprintf( __( 'The CSV must contain exactly one "%s" column.', 'wc-google-sheet-sync' ), $field ) );
-                }
-                $columns[ $field ] = $matches[0];
+            $columns = self::import_columns( $header );
+            if ( is_wp_error( $columns ) ) {
+                return $columns;
             }
 
             $rows = array();

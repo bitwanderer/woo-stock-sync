@@ -28,7 +28,7 @@ final class WC_GSS_Private_Sheet {
         }
 
         // The API omits trailing empty rows. The response byte and row limits apply below.
-        $range = "'" . str_replace( "'", "''", $tab ) . "'!A:D";
+        $range = "'" . str_replace( "'", "''", $tab ) . "'";
         $url = 'https://sheets.googleapis.com/v4/spreadsheets/' . $id . '/values/' . rawurlencode( $range ) .
             '?majorDimension=ROWS&valueRenderOption=FORMATTED_VALUE';
         $response = wp_safe_remote_get( $url, array(
@@ -43,8 +43,17 @@ final class WC_GSS_Private_Sheet {
             return $data;
         }
         $rows = $data['values'] ?? array();
-        if ( ! is_array( $rows ) || count( $rows ) > self::MAX_ROWS + 1 ) {
+        if ( ! is_array( $rows ) || array_values( $rows ) !== $rows || count( $rows ) > self::MAX_ROWS + 1 ) {
             return new WP_Error( 'wc_gss_private_rows', __( 'The sheet response is invalid or exceeds 10,000 data rows.', 'wc-google-sheet-sync' ) );
+        }
+
+        $header = $rows[0] ?? null;
+        if ( ! is_array( $header ) || array_values( $header ) !== $header ) {
+            return new WP_Error( 'wc_gss_header', __( 'The Google Sheet needs headers in row 1.', 'wc-google-sheet-sync' ) );
+        }
+        $columns = WC_Google_Sheet_Sync_Admin::import_columns( $header );
+        if ( is_wp_error( $columns ) ) {
+            return $columns;
         }
 
         // Normalize Sheets rows to CSV so both sources use the same import validation.
@@ -53,24 +62,20 @@ final class WC_GSS_Private_Sheet {
             return new WP_Error( 'wc_gss_private_stream', __( 'Could not open the temporary sheet stream.', 'wc-google-sheet-sync' ) );
         }
         try {
-            foreach ( $rows as $row ) {
-                if ( ! is_array( $row ) || count( $row ) > 4 || array_values( $row ) !== $row ) {
+            foreach ( $rows as $index => $row ) {
+                if ( ! is_array( $row ) || array_values( $row ) !== $row ) {
                     return new WP_Error( 'wc_gss_private_rows', __( 'Google Sheets returned an invalid row.', 'wc-google-sheet-sync' ) );
                 }
-                if ( array() === array_filter( $row, static function ( $value ) { return '' !== $value; } ) ) {
-                    $row = array( '' );
-                } else {
-                    foreach ( $row as $value ) {
-                        if ( ! is_string( $value ) && ! is_int( $value ) && ! is_float( $value ) && ! is_bool( $value ) ) {
-                            return new WP_Error( 'wc_gss_private_rows', __( 'Google Sheets returned an invalid cell.', 'wc-google-sheet-sync' ) );
-                        }
+                $selected = array();
+                foreach ( $columns as $field => $column ) {
+                    $value = 0 === $index ? $field : ( $row[ $column ] ?? '' );
+                    if ( ! is_scalar( $value ) ) {
+                        return new WP_Error( 'wc_gss_private_rows', __( 'Google Sheets returned an invalid cell.', 'wc-google-sheet-sync' ) );
                     }
-                    $row = array_pad( $row, 4, '' );
-                    // Preserve booleans as text so the shared numeric validator rejects them.
-                    $row = array_map( static function ( $value ) {
-                        return is_bool( $value ) ? ( $value ? 'TRUE' : 'FALSE' ) : $value;
-                    }, $row );
+                    $selected[] = is_bool( $value ) ? ( $value ? 'TRUE' : 'FALSE' ) : $value;
                 }
+                // Keep row numbers stable while skipping rows with data only in ignored columns.
+                $row = array( '', '', '', '' ) === $selected ? array( '' ) : $selected;
                 if ( false === fputcsv( $stream, $row, ',', '"', '' ) || ftell( $stream ) > self::MAX_BYTES ) {
                     return new WP_Error( 'wc_gss_private_size', __( 'The sheet exceeds the 2 MiB import limit or could not be read.', 'wc-google-sheet-sync' ) );
                 }

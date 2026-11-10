@@ -42,8 +42,8 @@ OpenSSL.
    ```
 
    Use the ID between `/spreadsheets/d/` and `/edit`. Keep the client secret
-   out of Git and chat. Put the four import columns in A–D, with headers in
-   row 1, and format stock and prices without currency symbols.
+   out of Git and chat. Put the four import headers in row 1, in any order. Extra columns are
+   ignored. Format stock and prices without currency symbols.
 5. Return to **WooCommerce → Sheet Sync**, click **Connect Google**, and sign
    in as a Workspace user who can view the sheet. Keep your WordPress session
    open during consent. Then click **Run Sync Now**.
@@ -74,8 +74,8 @@ account if you also want to remove Google's grant.
    ```
 
    Use the ID between `/spreadsheets/d/` and `/edit` in the normal Sheets URL.
-   Put the four import columns listed below in columns A–D, with the headers
-   in row 1. Format SKUs with leading zeros as plain text. Format stock and
+   Put the four import headers in row 1, in any order. Extra columns are
+   ignored. Format SKUs with leading zeros as plain text. Format stock and
    prices as numbers without currency symbols, using a decimal point.
 4. Open **WooCommerce → Sheet Sync** and click **Run Sync Now**. The plugin
    uses read-only Sheets API access and keeps the credential on the server.
