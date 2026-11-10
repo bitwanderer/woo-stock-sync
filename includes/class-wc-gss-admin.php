@@ -243,7 +243,6 @@ public function enqueue_admin_scripts( $hook ) {
             }
 
             $rows = array();
-            $seen = array();
             $row_number = 1;
             while ( false !== ( $row = fgetcsv( $handle, 0, ',', '"', '' ) ) ) {
                 $row_number++;
@@ -258,27 +257,18 @@ public function enqueue_admin_scripts( $hook ) {
                 if ( array( null ) === $row ) {
                     continue;
                 }
-                if ( count( $row ) !== count( $header ) ) {
-                    return new WP_Error( 'wc_gss_row', sprintf( __( 'CSV row %d has the wrong number of columns.', 'wc-google-sheet-sync' ), $row_number ) );
+                $sku = trim( $row[ $columns['sku'] ] ?? '' );
+                if ( '' === $sku || strlen( $sku ) > 255 || preg_match( '/[\x00-\x1f\x7f]/', $sku ) ) {
+                    return new WP_Error( 'wc_gss_row', sprintf( __( 'CSV row %d has an invalid SKU.', 'wc-google-sheet-sync' ), $row_number ) );
                 }
-
-                $sku = trim( $row[ $columns['sku'] ] );
-                $stock = trim( $row[ $columns['stock'] ] );
-                $regular = $this->parse_price( $row[ $columns['regular price'] ] );
-                $sale_input = trim( $row[ $columns['sale price'] ] );
-                $sale = '' === $sale_input ? '' : $this->parse_price( $sale_input );
-                if ( '' === $sku || strlen( $sku ) > 255 || preg_match( '/[\x00-\x1f\x7f]/', $sku ) ||
-                    ! preg_match( '/\A[0-9]{1,10}\z/', $stock ) || (float) $stock > 2147483647 ||
-                    null === $regular || null === $sale || ( '' !== $sale && (float) $sale > 0 && (float) $sale >= (float) $regular ) ) {
-                    return new WP_Error( 'wc_gss_row', sprintf( __( 'CSV row %d has an invalid SKU, stock quantity, or price.', 'wc-google-sheet-sync' ), $row_number ) );
-                }
-
-                $key = strtolower( $sku );
-                if ( isset( $seen[ $key ] ) ) {
-                    return new WP_Error( 'wc_gss_duplicate', sprintf( __( 'CSV row %d has a duplicate SKU.', 'wc-google-sheet-sync' ), $row_number ) );
-                }
-                $seen[ $key ] = true;
-                $rows[] = array( $sku, (int) $stock, $regular, '' !== $sale && (float) $sale > 0 ? $sale : '' );
+                $rows[] = array(
+                    $row_number,
+                    $sku,
+                    count( $row ) === count( $header ),
+                    $row[ $columns['stock'] ] ?? '',
+                    $row[ $columns['regular price'] ] ?? '',
+                    $row[ $columns['sale price'] ] ?? '',
+                );
             }
 
             return $rows ?: new WP_Error( 'wc_gss_empty', __( 'The CSV has no product rows.', 'wc-google-sheet-sync' ) );
@@ -297,11 +287,22 @@ public function enqueue_admin_scripts( $hook ) {
         $not_found = 0;
         $updated = 0;
         try {
-            foreach ( $rows as list( $sku, $stock, $regular, $sale ) ) {
+            foreach ( $rows as list( $row_number, $sku, $complete, $stock, $regular, $sale_input ) ) {
                 $product_id = wc_get_product_id_by_sku( $sku );
                 if ( ! $product_id ) {
                     $not_found++;
                     continue;
+                }
+                if ( ! $complete ) {
+                    return new WP_Error( 'wc_gss_row', sprintf( __( 'CSV row %d has the wrong number of columns.', 'wc-google-sheet-sync' ), $row_number ) );
+                }
+                $stock = trim( $stock );
+                $regular = $this->parse_price( $regular );
+                $sale_input = trim( $sale_input );
+                $sale = '' === $sale_input ? '' : $this->parse_price( $sale_input );
+                if ( ! preg_match( '/\A[0-9]{1,10}\z/', $stock ) || (float) $stock > 2147483647 ||
+                    null === $regular || null === $sale || ( '' !== $sale && (float) $sale > 0 && (float) $sale >= (float) $regular ) ) {
+                    return new WP_Error( 'wc_gss_row', sprintf( __( 'CSV row %d has an invalid stock quantity or price.', 'wc-google-sheet-sync' ), $row_number ) );
                 }
                 if ( isset( $updates[ $product_id ] ) ) {
                     return new WP_Error( 'wc_gss_duplicate', __( 'Multiple CSV rows resolve to the same WooCommerce product.', 'wc-google-sheet-sync' ) );
@@ -309,10 +310,7 @@ public function enqueue_admin_scripts( $hook ) {
                 if ( ! current_user_can( 'edit_post', $product_id ) ) {
                     return new WP_Error( 'wc_gss_product_permission', __( 'You do not have permission to edit every product in this import.', 'wc-google-sheet-sync' ) );
                 }
-                $updates[ $product_id ] = array( $stock, $regular, $sale );
-            }
-            if ( ! $updates ) {
-                return new WP_Error( 'wc_gss_no_matches', __( 'No CSV SKUs matched WooCommerce products.', 'wc-google-sheet-sync' ) );
+                $updates[ $product_id ] = array( (int) $stock, $regular, '' !== $sale && (float) $sale > 0 ? $sale : '' );
             }
 
             foreach ( $updates as $product_id => list( $stock, $regular, $sale ) ) {

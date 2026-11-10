@@ -113,9 +113,10 @@ in to Google.
 
 - Imports are limited to 2 MiB and 10,000 rows. One import can run per store at
   a time.
-- The plugin validates the entire CSV and checks product edit permissions
-  before it starts writing. Duplicate SKUs and invalid rows stop the import.
-  Unknown SKUs are skipped.
+- The plugin skips SKUs that do not exist in WooCommerce before checking their
+  stock or prices. Duplicate matches, invalid values, or insufficient edit
+  permissions for products in WooCommerce stop the import before it writes.
+  If no SKUs match, the sync reports zero updates.
 - The saved source URL and last successful sync time update after the import
   completes. If WooCommerce fails while saving, earlier saves can remain.
   The error reports how many saves completed so you can review the catalog
