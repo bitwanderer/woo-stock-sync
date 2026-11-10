@@ -73,135 +73,259 @@ public function enqueue_admin_scripts( $hook ) {
     public function handle_sync_ajax() {
         check_ajax_referer( 'wc-gss-sync-nonce', 'nonce' );
 
-      // Allow both Administrators and Shop Managers
-if ( ! current_user_can( 'manage_options' ) && ! current_user_can( 'manage_woocommerce' ) ) {
-    wp_send_json_error( array(
-        'message' => __( 'You do not have permission to perform this action.', 'wc-google-sheet-sync' )
-    ) );
-}
-
-
-        $sheet_url = sanitize_url( $_POST['sheet_url'] ?? '' );
-        if ( ! filter_var( $sheet_url, FILTER_VALIDATE_URL ) ) {
-            wp_send_json_error( array( 'message' => __( 'Invalid Google Sheet URL.', 'wc-google-sheet-sync' ) ) );
+        if ( ! current_user_can( 'manage_options' ) && ! current_user_can( 'manage_woocommerce' ) ) {
+            wp_send_json_error( array( 'message' => __( 'You do not have permission to perform this action.', 'wc-google-sheet-sync' ) ), 403 );
         }
 
-        update_option( 'wc_gss_google_sheet_url', $sheet_url );
+        $sheet_url = isset( $_POST['sheet_url'] ) && is_string( $_POST['sheet_url'] )
+            ? trim( wp_unslash( $_POST['sheet_url'] ) )
+            : '';
+        if ( ! $this->is_google_csv_url( $sheet_url ) ) {
+            wp_send_json_error( array( 'message' => __( 'Enter an HTTPS Google Sheets CSV export URL.', 'wc-google-sheet-sync' ) ), 400 );
+        }
 
-        $result = $this->fetch_and_sync_sheet_data( $sheet_url );
-        update_option( 'wc_gss_last_sync_time', current_time( 'mysql' ) );
+        global $wpdb;
+        // A database advisory lock is atomic and is released if the connection closes.
+        $lock = hash( 'sha256', DB_NAME . ':' . $wpdb->options . ':wc-gss-sync' );
+        $acquired = $wpdb->get_var( $wpdb->prepare( 'SELECT GET_LOCK(%s, 0)', $lock ) );
+        if ( '1' !== (string) $acquired ) {
+            $message = '0' === (string) $acquired
+                ? __( 'A sheet sync is already running.', 'wc-google-sheet-sync' )
+                : __( 'Could not acquire the sheet sync lock.', 'wc-google-sheet-sync' );
+            wp_send_json_error( array( 'message' => $message ), 409 );
+        }
 
+        try {
+            $result = $this->fetch_and_sync_sheet_data( $sheet_url );
+            if ( ! is_wp_error( $result ) ) {
+                update_option( 'wc_gss_google_sheet_url', $sheet_url );
+                $result['last_sync_time'] = gmdate( 'c' );
+                update_option( 'wc_gss_last_sync_time', $result['last_sync_time'] );
+            }
+        } finally {
+            $wpdb->get_var( $wpdb->prepare( 'SELECT RELEASE_LOCK(%s)', $lock ) );
+        }
+
+        if ( is_wp_error( $result ) ) {
+            wp_send_json_error( array( 'message' => $result->get_error_message() ) );
+        }
         wp_send_json_success( $result );
     }
 
-    private function fetch_and_sync_sheet_data( $sheet_url ) {
-        $updated     = 0;
-        $not_found   = 0;
-        $errors      = array();
-        $total_rows  = 0;
-
-        $response = wp_remote_get( $sheet_url, array( 'timeout' => 60 ) );
-
-        if ( is_wp_error( $response ) ) {
-            return array(
-                'updated'   => 0,
-                'not_found'=> 0,
-                'errors'   => array( 'Fetch error: ' . $response->get_error_message() ),
-            );
+    private function is_google_csv_url( $url, $is_redirect = false ) {
+        if ( strlen( $url ) > 8192 || preg_match( '/[\x00-\x20\x7f\\\\]/', $url ) ) {
+            return false;
         }
 
-        $body = wp_remote_retrieve_body( $response );
-        if ( empty( $body ) ) {
-            return array(
-                'updated' => 0,
-                'not_found' => 0,
-                'errors' => array( __( 'Fetched sheet is empty.', 'wc-google-sheet-sync' ) ),
-            );
+        $parts = wp_parse_url( $url );
+        if ( ! $parts || 'https' !== ( $parts['scheme'] ?? '' ) || isset( $parts['user'] ) ||
+            isset( $parts['pass'] ) || isset( $parts['fragment'] ) || ( $parts['port'] ?? 443 ) !== 443 ) {
+            return false;
         }
 
-        $handle = fopen( 'php://temp', 'r+' );
-        fwrite( $handle, $body );
-        rewind( $handle );
+        $host = strtolower( $parts['host'] ?? '' );
+        if ( $is_redirect && preg_match( '/\Adoc-[a-z0-9-]+-sheets\.googleusercontent\.com\z/', $host ) ) {
+            return true;
+        }
+        if ( 'docs.google.com' !== $host ) {
+            return false;
+        }
 
-        $header = fgetcsv( $handle );
-        if ( ! $header ) {
+        $path = $parts['path'] ?? '';
+        parse_str( $parts['query'] ?? '', $query );
+        return ( preg_match( '~\A/spreadsheets/d/(?:e/)?[A-Za-z0-9_-]+/pub\z~', $path ) && 'csv' === ( $query['output'] ?? '' ) )
+            || ( preg_match( '~\A/spreadsheets/d/[A-Za-z0-9_-]+/export\z~', $path ) && 'csv' === ( $query['format'] ?? '' ) );
+    }
+
+    private function fetch_csv( $url ) {
+        $max_bytes = 2 * 1024 * 1024;
+        for ( $redirects = 0; $redirects <= 3; $redirects++ ) {
+            $response = wp_safe_remote_get( $url, array(
+                'timeout'             => 10,
+                'redirection'         => 0,
+                'limit_response_size' => $max_bytes + 1,
+                'decompress'          => false,
+                'headers'             => array( 'Accept-Encoding' => 'identity' ),
+            ) );
+            if ( is_wp_error( $response ) ) {
+                return new WP_Error( 'wc_gss_fetch', __( 'Could not download the Google Sheets CSV.', 'wc-google-sheet-sync' ) );
+            }
+
+            $status = (int) wp_remote_retrieve_response_code( $response );
+            if ( in_array( $status, array( 301, 302, 303, 307, 308 ), true ) ) {
+                $location = wp_remote_retrieve_header( $response, 'location' );
+                if ( 3 === $redirects || ! is_string( $location ) || '' === $location ) {
+                    break;
+                }
+                $url = WP_Http::make_absolute_url( $location, $url );
+                if ( ! $this->is_google_csv_url( $url, true ) ) {
+                    break;
+                }
+                continue;
+            }
+
+            if ( 200 !== $status ) {
+                return new WP_Error( 'wc_gss_http_status', __( 'Google Sheets did not return a successful CSV download. Check the publication settings.', 'wc-google-sheet-sync' ) );
+            }
+
+            $body = wp_remote_retrieve_body( $response );
+            if ( strlen( $body ) > $max_bytes ) {
+                return new WP_Error( 'wc_gss_size', __( 'The CSV exceeds the 2 MiB download limit.', 'wc-google-sheet-sync' ) );
+            }
+            return $body;
+        }
+
+        return new WP_Error( 'wc_gss_redirect', __( 'Google Sheets redirected outside the allowed CSV download locations or exceeded the redirect limit.', 'wc-google-sheet-sync' ) );
+    }
+
+    private function parse_price( $value ) {
+        $value = trim( $value );
+        // Accept plain decimals and correctly grouped thousands, without coercion.
+        if ( ! preg_match( '/\A(?:[0-9]{1,12}|[0-9]{1,3}(?:,[0-9]{3}){1,3})(?:\.[0-9]{1,6})?\z/', $value ) ) {
+            return null;
+        }
+        return str_replace( ',', '', $value );
+    }
+
+    private function is_csv_record( $record ) {
+        $field = '(?:"(?:[^"]++|"")*+"|[^",\r\n]*+)';
+        return 1 === preg_match( '~\A' . $field . '(?:,' . $field . ')*+(?:\r\n|\r|\n)?\z~', $record );
+    }
+
+    private function parse_csv( $body ) {
+        if ( ! preg_match( '//u', $body ) || false !== strpos( $body, "\0" ) ) {
+            return new WP_Error( 'wc_gss_encoding', __( 'The CSV must be UTF-8 text.', 'wc-google-sheet-sync' ) );
+        }
+        $handle = fopen( 'php://temp', 'w+' );
+        if ( false === $handle ) {
+            return new WP_Error( 'wc_gss_stream', __( 'Could not open a temporary CSV stream.', 'wc-google-sheet-sync' ) );
+        }
+
+        try {
+            if ( 0 === strpos( $body, "\xEF\xBB\xBF" ) ) {
+                $body = substr( $body, 3 );
+            }
+            if ( strlen( $body ) !== fwrite( $handle, $body ) || ! rewind( $handle ) ) {
+                return new WP_Error( 'wc_gss_stream', __( 'Could not read the downloaded CSV.', 'wc-google-sheet-sync' ) );
+            }
+
+            $header = fgetcsv( $handle, 0, ',', '"', '' );
+            $offset = ftell( $handle );
+            if ( ! $header || ! $this->is_csv_record( substr( $body, 0, $offset ) ) ) {
+                return new WP_Error( 'wc_gss_header', __( 'The CSV header is missing or invalid.', 'wc-google-sheet-sync' ) );
+            }
+            $fields = array( 'sku', 'stock', 'regular price', 'sale price' );
+            $columns = array();
+            $header = array_map( static function ( $name ) {
+                return strtolower( trim( (string) $name ) );
+            }, $header );
+            foreach ( $fields as $field ) {
+                $matches = array_keys( $header, $field, true );
+                if ( 1 !== count( $matches ) ) {
+                    return new WP_Error( 'wc_gss_header', sprintf( __( 'The CSV must contain exactly one "%s" column.', 'wc-google-sheet-sync' ), $field ) );
+                }
+                $columns[ $field ] = $matches[0];
+            }
+
+            $rows = array();
+            $seen = array();
+            $row_number = 1;
+            while ( false !== ( $row = fgetcsv( $handle, 0, ',', '"', '' ) ) ) {
+                $row_number++;
+                if ( $row_number > 10001 ) {
+                    return new WP_Error( 'wc_gss_rows', __( 'The CSV exceeds the 10,000-row limit.', 'wc-google-sheet-sync' ) );
+                }
+                $end = ftell( $handle );
+                if ( ! $this->is_csv_record( substr( $body, $offset, $end - $offset ) ) ) {
+                    return new WP_Error( 'wc_gss_row', sprintf( __( 'CSV row %d is malformed.', 'wc-google-sheet-sync' ), $row_number ) );
+                }
+                $offset = $end;
+                if ( array( null ) === $row ) {
+                    continue;
+                }
+                if ( count( $row ) !== count( $header ) ) {
+                    return new WP_Error( 'wc_gss_row', sprintf( __( 'CSV row %d has the wrong number of columns.', 'wc-google-sheet-sync' ), $row_number ) );
+                }
+
+                $sku = trim( $row[ $columns['sku'] ] );
+                $stock = trim( $row[ $columns['stock'] ] );
+                $regular = $this->parse_price( $row[ $columns['regular price'] ] );
+                $sale_input = trim( $row[ $columns['sale price'] ] );
+                $sale = '' === $sale_input ? '' : $this->parse_price( $sale_input );
+                if ( '' === $sku || strlen( $sku ) > 255 || preg_match( '/[\x00-\x1f\x7f]/', $sku ) ||
+                    ! preg_match( '/\A[0-9]{1,10}\z/', $stock ) || (float) $stock > 2147483647 ||
+                    null === $regular || null === $sale || ( '' !== $sale && (float) $sale > 0 && (float) $sale >= (float) $regular ) ) {
+                    return new WP_Error( 'wc_gss_row', sprintf( __( 'CSV row %d has an invalid SKU, stock quantity, or price.', 'wc-google-sheet-sync' ), $row_number ) );
+                }
+
+                $key = strtolower( $sku );
+                if ( isset( $seen[ $key ] ) ) {
+                    return new WP_Error( 'wc_gss_duplicate', sprintf( __( 'CSV row %d has a duplicate SKU.', 'wc-google-sheet-sync' ), $row_number ) );
+                }
+                $seen[ $key ] = true;
+                $rows[] = array( $sku, (int) $stock, $regular, '' !== $sale && (float) $sale > 0 ? $sale : '' );
+            }
+
+            return $rows ?: new WP_Error( 'wc_gss_empty', __( 'The CSV has no product rows.', 'wc-google-sheet-sync' ) );
+        } finally {
             fclose( $handle );
-            return array(
-                'updated' => 0,
-                'not_found' => 0,
-                'errors' => array( __( 'Could not read CSV header.', 'wc-google-sheet-sync' ) ),
-            );
+        }
+    }
+
+    private function fetch_and_sync_sheet_data( $sheet_url ) {
+        $body = $this->fetch_csv( $sheet_url );
+        if ( is_wp_error( $body ) ) {
+            return $body;
+        }
+        $rows = $this->parse_csv( $body );
+        if ( is_wp_error( $rows ) ) {
+            return $rows;
         }
 
-        $normalized_header = array_map( 'strtolower', $header );
-        $required_fields = array( 'sku', 'stock', 'regular price', 'sale price' );
-        $field_map = [];
-
-        foreach ( $required_fields as $field ) {
-            $index = array_search( strtolower( $field ), $normalized_header );
-            if ( $index === false ) {
-                fclose( $handle );
-                return array(
-                    'updated' => 0,
-                    'not_found' => 0,
-                    'errors' => array( sprintf( __( 'Missing column: %s', 'wc-google-sheet-sync' ), $field ) ),
-                );
+        $updates = array();
+        $not_found = 0;
+        $updated = 0;
+        try {
+            foreach ( $rows as list( $sku, $stock, $regular, $sale ) ) {
+                $product_id = wc_get_product_id_by_sku( $sku );
+                if ( ! $product_id ) {
+                    $not_found++;
+                    continue;
+                }
+                if ( isset( $updates[ $product_id ] ) ) {
+                    return new WP_Error( 'wc_gss_duplicate', __( 'Multiple CSV rows resolve to the same WooCommerce product.', 'wc-google-sheet-sync' ) );
+                }
+                if ( ! current_user_can( 'edit_post', $product_id ) ) {
+                    return new WP_Error( 'wc_gss_product_permission', __( 'You do not have permission to edit every product in this import.', 'wc-google-sheet-sync' ) );
+                }
+                $updates[ $product_id ] = array( $stock, $regular, $sale );
             }
-            $field_map[ $field ] = $index;
+            if ( ! $updates ) {
+                return new WP_Error( 'wc_gss_no_matches', __( 'No CSV SKUs matched WooCommerce products.', 'wc-google-sheet-sync' ) );
+            }
+
+            foreach ( $updates as $product_id => list( $stock, $regular, $sale ) ) {
+                $product = wc_get_product( $product_id );
+                if ( ! $product ) {
+                    throw new RuntimeException( 'Could not load product.' );
+                }
+                $product->set_manage_stock( true );
+                $product->set_stock_quantity( $stock );
+                $product->set_regular_price( $regular );
+                $product->set_sale_price( $sale );
+                if ( ! $product->save() ) {
+                    throw new RuntimeException( 'Could not save product.' );
+                }
+                $updated++;
+            }
+        } catch ( Throwable $error ) {
+            return new WP_Error( 'wc_gss_write', sprintf( __( 'The import stopped after %d confirmed product saves. Check product data before retrying.', 'wc-google-sheet-sync' ), $updated ) );
         }
-
-        while ( ( $row = fgetcsv( $handle ) ) !== false ) {
-            $total_rows++;
-            if ( empty( $row ) || ! is_array( $row ) || count( $row ) <= max( $field_map ) ) {
-                $errors[] = "Row {$total_rows}: invalid or incomplete row.";
-                continue;
-            }
-
-            $sku           = sanitize_text_field( $row[ $field_map['sku'] ] );
-            $stock         = (int) $row[ $field_map['stock'] ];
-            $regular_price = (float) str_replace( ',', '', $row[ $field_map['regular price'] ] );
-            $sale_price    = (float) str_replace( ',', '', $row[ $field_map['sale price'] ] );
-
-            if ( empty( $sku ) ) {
-                $errors[] = "Row {$total_rows}: SKU is missing.";
-                continue;
-            }
-
-            $product_id = wc_get_product_id_by_sku( $sku );
-            if ( ! $product_id ) {
-                $not_found++;
-                continue;
-            }
-
-            $product = wc_get_product( $product_id );
-            if ( ! $product ) {
-                $errors[] = "Row {$total_rows} (SKU: {$sku}): product could not be loaded.";
-                $not_found++;
-                continue;
-            }
-
-            wc_update_product_stock( $product_id, $stock );
-            $product->set_manage_stock( true );
-
-            $product->set_regular_price( $regular_price );
-            if ( $sale_price > 0 && $sale_price < $regular_price ) {
-                $product->set_sale_price( $sale_price );
-            } else {
-                $product->set_sale_price( '' );
-            }
-
-            $product->save();
-            $updated++;
-        }
-
-        fclose( $handle );
 
         return array(
-            'updated'     => $updated,
-            'not_found'   => $not_found,
-            'total_rows'  => $total_rows,
-            'errors'      => $errors,
-            'message'     => __( 'Sync completed.', 'wc-google-sheet-sync' ),
+            'updated'    => $updated,
+            'not_found'  => $not_found,
+            'total_rows' => count( $rows ),
         );
     }
 }

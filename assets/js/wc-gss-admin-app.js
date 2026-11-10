@@ -1,4 +1,4 @@
-const { useState, useEffect, createRoot, createElement } = wp.element;
+const { useState, createRoot, createElement } = wp.element;
 
 function App() {
     const [sheetUrl, setSheetUrl] = useState(wcGssData.sheet_url);
@@ -16,8 +16,8 @@ function App() {
         setMessage('');
         setMessageType('');
 
-        if (!sheetUrl.startsWith('http://') && !sheetUrl.startsWith('https://')) {
-            setMessage('Please enter a valid URL starting with http:// or https://');
+        if (!sheetUrl.trim().startsWith('https://')) {
+            setMessage('Enter an HTTPS Google Sheets CSV export URL.');
             setMessageType('error');
             setIsLoading(false);
             return;
@@ -26,7 +26,7 @@ function App() {
         const formData = new FormData();
         formData.append('action', 'wc_gss_sync_data');
         formData.append('nonce', wcGssData.sync_nonce);
-        formData.append('sheet_url', sheetUrl);
+        formData.append('sheet_url', sheetUrl.trim());
 
         try {
             const response = await fetch(wcGssData.ajax_url, {
@@ -39,17 +39,13 @@ function App() {
             if (data.success) {
                 setMessage(
                     `Sync successful! Updated ${data.data.updated} products. ` +
-                    `${data.data.not_found} products not found/skipped. ` +
-                    (data.data.errors.length > 0 ? `Errors: ${data.data.errors.join('; ')}` : '')
+                    `${data.data.not_found} SKUs did not match a product.`
                 );
                 setMessageType('success');
-                setLastSyncTime(new Date().toLocaleString());
+                setLastSyncTime(data.data.last_sync_time);
             } else {
-                setMessage(`Sync failed: ${data.data.message || 'Unknown error.'}`);
+                setMessage(`Sync failed: ${data.data?.message || 'Unknown error.'}`);
                 setMessageType('error');
-                if (data.data.errors && data.data.errors.length > 0) {
-                    setMessage(prev => prev + ` Errors: ${data.data.errors.join('; ')}`);
-                }
             }
         } catch (error) {
             console.error('Fetch error:', error);
@@ -65,7 +61,7 @@ function App() {
             createElement('label', {
                 htmlFor: 'wc-gss-sheet-url',
                 className: 'wc-gss-label'
-            }, 'Google Sheet Public CSV/TSV URL:'),
+            }, 'Google Sheet CSV URL:'),
 
             createElement('input', {
                 type: 'url',
@@ -80,7 +76,7 @@ function App() {
             createElement('p', {
                 className: 'wc-gss-info',
                 style: { fontSize: '0.85em', color: '#666', marginTop: '5px' }
-            }, '*Your Google Sheet must be published to the web as CSV or TSV. Go to File > Share > Publish to web > Choose "Comma-separated values (.csv)" or "Tab-separated values (.tsv)".')
+            }, 'In Google Sheets, use File > Share > Publish to web and choose "Comma-separated values (.csv)".')
         ),
 
         createElement('button', {
