@@ -27,7 +27,7 @@ class WC_Google_Sheet_Sync_Admin {
         ?>
         <div id="wc-gss-admin-root">
             <h1><?php esc_html_e( 'WooCommerce Google Sheet Sync', 'wc-google-sheet-sync' ); ?></h1>
-            <p><?php esc_html_e( 'Configure your Google Sheet URL and synchronize product data.', 'wc-google-sheet-sync' ); ?></p>
+            <p><?php esc_html_e( 'Synchronize product data from Google Sheets.', 'wc-google-sheet-sync' ); ?></p>
             <div id="wc-gss-react-app"></div>
         </div>
         <?php
@@ -56,7 +56,8 @@ public function enqueue_admin_scripts( $hook ) {
     wp_localize_script( 'wc-gss-admin-app', 'wcGssData', array(
         'ajax_url'        => admin_url( 'admin-ajax.php' ),
         'sync_nonce'      => wp_create_nonce( 'wc-gss-sync-nonce' ),
-        'sheet_url'       => get_option( 'wc_gss_google_sheet_url', '' ),
+        'private_sheet'   => WC_GSS_Private_Sheet::configured(),
+        'sheet_url'       => WC_GSS_Private_Sheet::configured() ? '' : get_option( 'wc_gss_google_sheet_url', '' ),
         'last_sync_time'  => get_option( 'wc_gss_last_sync_time', '' ),
     ));
 
@@ -77,10 +78,11 @@ public function enqueue_admin_scripts( $hook ) {
             wp_send_json_error( array( 'message' => __( 'You do not have permission to perform this action.', 'wc-google-sheet-sync' ) ), 403 );
         }
 
-        $sheet_url = isset( $_POST['sheet_url'] ) && is_string( $_POST['sheet_url'] )
+        $private_sheet = WC_GSS_Private_Sheet::configured();
+        $sheet_url = ! $private_sheet && isset( $_POST['sheet_url'] ) && is_string( $_POST['sheet_url'] )
             ? trim( wp_unslash( $_POST['sheet_url'] ) )
             : '';
-        if ( ! $this->is_google_csv_url( $sheet_url ) ) {
+        if ( ! $private_sheet && ! $this->is_google_csv_url( $sheet_url ) ) {
             wp_send_json_error( array( 'message' => __( 'Enter an HTTPS Google Sheets CSV export URL.', 'wc-google-sheet-sync' ) ), 400 );
         }
 
@@ -96,9 +98,12 @@ public function enqueue_admin_scripts( $hook ) {
         }
 
         try {
-            $result = $this->fetch_and_sync_sheet_data( $sheet_url );
+            $body = $private_sheet ? WC_GSS_Private_Sheet::fetch_csv() : $this->fetch_csv( $sheet_url );
+            $result = is_wp_error( $body ) ? $body : $this->sync_sheet_data( $body );
             if ( ! is_wp_error( $result ) ) {
-                update_option( 'wc_gss_google_sheet_url', $sheet_url );
+                if ( ! $private_sheet ) {
+                    update_option( 'wc_gss_google_sheet_url', $sheet_url );
+                }
                 $result['last_sync_time'] = gmdate( 'c' );
                 update_option( 'wc_gss_last_sync_time', $result['last_sync_time'] );
             }
@@ -272,11 +277,7 @@ public function enqueue_admin_scripts( $hook ) {
         }
     }
 
-    private function fetch_and_sync_sheet_data( $sheet_url ) {
-        $body = $this->fetch_csv( $sheet_url );
-        if ( is_wp_error( $body ) ) {
-            return $body;
-        }
+    private function sync_sheet_data( $body ) {
         $rows = $this->parse_csv( $body );
         if ( is_wp_error( $rows ) ) {
             return $rows;

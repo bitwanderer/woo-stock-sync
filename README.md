@@ -18,7 +18,36 @@ installed a second copy under `woo-stock-sync-main`, deactivate that copy
 before upgrading and keep only `wc-google-sheet-sync` active. The saved
 sheet URL is stored in WordPress and is shared by both copies.
 
-## Prepare and sync a sheet
+## Use a private Google Workspace sheet
+
+1. Enable the Google Sheets API in your Google Cloud project and share a
+   dedicated inventory spreadsheet with the service account as **Viewer**.
+   Keep the sheet private. Domain-wide delegation is unnecessary.
+2. In Google Cloud, open the service account and choose **Keys → Add key →
+   Create new key → JSON**, if your organization permits it. Put the JSON file
+   on the WordPress server outside the web root, readable only by the site
+   user running PHP (mode `0600` on Linux). PHP needs OpenSSL. Keep the key
+   out of Git, WordPress uploads, and chat.
+3. Add these settings to `wp-config.php` before the line that loads WordPress:
+
+   ```php
+   define( 'WC_GSS_GOOGLE_KEY_FILE', '/absolute/private/path/woo-stock-sync.json' );
+   define( 'WC_GSS_GOOGLE_SPREADSHEET_ID', 'ID_FROM_THE_NORMAL_EDIT_LINK' );
+   define( 'WC_GSS_GOOGLE_SHEET_TAB', 'products' );
+   ```
+
+   Use the ID between `/spreadsheets/d/` and `/edit` in the normal Sheets URL.
+   Put the four import columns listed below in columns A–D, with the headers
+   in row 1. Format SKUs with leading zeros as plain text. Format stock and
+   prices as numbers without currency symbols, using a decimal point.
+4. Open **WooCommerce → Sheet Sync** and click **Run Sync Now**. The plugin
+   uses read-only Sheets API access and keeps the credential on the server.
+
+If your organization disallows service-account keys or prevents sharing with
+the service account, this setup requires a different authentication method.
+Public CSV links still work on sites that do not configure a private sheet.
+
+## Prepare and sync a public sheet
 
 1. Create a sheet with the following columns.
 

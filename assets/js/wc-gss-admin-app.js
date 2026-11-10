@@ -16,7 +16,7 @@ function App() {
         setMessage('');
         setMessageType('');
 
-        if (!sheetUrl.trim().startsWith('https://')) {
+        if (!wcGssData.private_sheet && !sheetUrl.trim().startsWith('https://')) {
             setMessage('Enter an HTTPS Google Sheets CSV export URL.');
             setMessageType('error');
             setIsLoading(false);
@@ -26,7 +26,7 @@ function App() {
         const formData = new FormData();
         formData.append('action', 'wc_gss_sync_data');
         formData.append('nonce', wcGssData.sync_nonce);
-        formData.append('sheet_url', sheetUrl.trim());
+        if (!wcGssData.private_sheet) formData.append('sheet_url', sheetUrl.trim());
 
         try {
             const response = await fetch(wcGssData.ajax_url, {
@@ -57,7 +57,7 @@ function App() {
     };
 
     const children = [
-        createElement('div', { className: 'wc-gss-form-group' },
+        wcGssData.private_sheet ? createElement('p', null, 'Using the private Google Sheet configured on this server.') : createElement('div', { className: 'wc-gss-form-group' },
             createElement('label', {
                 htmlFor: 'wc-gss-sheet-url',
                 className: 'wc-gss-label'
@@ -82,7 +82,7 @@ function App() {
         createElement('button', {
             onClick: handleSync,
             className: 'wc-gss-button',
-            disabled: isLoading || !sheetUrl
+            disabled: isLoading || (!wcGssData.private_sheet && !sheetUrl)
         }, isLoading ? 'Syncing...' : 'Run Sync Now'),
 
         lastSyncTime ? createElement('p', { className: 'wc-gss-last-sync' },
