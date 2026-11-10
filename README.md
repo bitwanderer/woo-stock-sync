@@ -13,6 +13,11 @@ each matched product, so check the values before running a sync.
    replacement.
 3. Activate the plugin. WooCommerce must be active.
 
+The release ZIP installs into `wc-google-sheet-sync`. If an earlier ZIP
+installed a second copy under `woo-stock-sync-main`, deactivate that copy
+before upgrading and keep only `wc-google-sheet-sync` active. The saved
+sheet URL is stored in WordPress and is shared by both copies.
+
 ## Prepare and sync a sheet
 
 1. Create a sheet with the following columns.
